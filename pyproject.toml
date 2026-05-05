@@ -1,5 +1,5 @@
 [project]
-name = "arize-gemini-hackathon-starter"
+name = "gemini-hackathon"
 version = "0.1.0"
 description = "ADK shopping demo + Phoenix tracing for the Arize / Google Cloud hackathon track"
 readme = "README.md"

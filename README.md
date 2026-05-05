@@ -1,6 +1,6 @@
-# Arize Google hackathon starter
+# Gemini hackathon starter
 
-End-to-end template for the **Arize @ Google Cloud Partnerships Hackathon** track: a small **Google ADK** agent (pattern from [google/adk-samples personalized-shopping](https://github.com/google/adk-samples/tree/main/python/agents/personalized-shopping)), **OpenInference** instrumentation for ADK, `**[phoenix.otel.register](https://arize.com/docs/phoenix/get-started/get-started-tracing)`** for Phoenix Cloud tracing, and **Gemini CLI** MCP config for `@arizeai/phoenix-mcp`.
+End-to-end template for the **Arize @ Google Cloud Partnerships Hackathon** track: a small **Google ADK** agent (pattern from [google/adk-samples personalized-shopping](https://github.com/google/adk-samples/tree/main/python/agents/personalized-shopping)), **OpenInference** instrumentation for ADK, **[phoenix.otel.register](https://arize.com/docs/phoenix/get-started/get-started-tracing)** for Phoenix Cloud tracing, and **Gemini CLI** MCP config for `@arizeai/phoenix-mcp`.
 
 This repo uses a **tiny in-memory catalog** so you can run locally in minutes (no PyTorch, Pyserini, or multi-gigabyte product downloads). The agent still exposes the same **search** / **click** tools and a shopping-focused system prompt derived from the upstream sample.
 
@@ -17,7 +17,7 @@ This template uses `openinference-instrumentation-google-adk>=0.1.11`, which inc
 
 1. **Clone and install**
   ```bash
-   cd arize-gemini-hackathon-starter
+   cd gemini-hackathon
    cp .env.example .env
    # Edit .env: PHOENIX_API_KEY, PHOENIX_COLLECTOR_ENDPOINT (Hostname with /s/...), and either GOOGLE_API_KEY or Vertex settings.
    uv sync
@@ -26,7 +26,7 @@ This template uses `openinference-instrumentation-google-adk>=0.1.11`, which inc
   ```bash
    make run MESSAGE='Find a floral dress in size M'
   ```
-3. **Open Phoenix** — project name defaults to `PHOENIX_PROJECT_NAME` (`gemini-hackathon-starter`). Confirm LLM and tool spans appear.
+3. **Open Phoenix** — project name defaults to `PHOENIX_PROJECT_NAME` (`gemini-hackathon`). Confirm LLM and tool spans appear.
 4. **(Optional) ADK CLI**
   ```bash
    make run-adk
@@ -45,7 +45,7 @@ Phoenix MCP runs **inside Gemini CLI**, not inside the Python ADK process. After
   ```
 3. **Start Gemini CLI** from the repo root (or merge the `mcpServers` block into your global Gemini config). Restart the CLI if you just changed MCP settings.
 4. **Agent queries Phoenix via MCP (runtime superpower)** — With `@arizeai/phoenix-mcp` configured, the assistant gets **tools** over your Phoenix workspace (traces, sessions, experiments, prompts, datasets, and more). Try prompts such as:
-  - *“In Phoenix, show me the last 3 traces in my **gemini-hackathon-starter** project.”*
+  - *“In Phoenix, show me the last 3 traces in my **gemini-hackathon** project.”*
   - *“In Phoenix, summarize my latest experiment results.”*
   - *“In Phoenix, create a prompt that classifies user intent.”*
    Additional ideas (sessions, annotation configs, datasets): [Using the Phoenix MCP server](https://arize.com/docs/phoenix/integrations/phoenix-mcp-server#using-the-phoenix-mcp-server).
