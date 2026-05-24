@@ -6,7 +6,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // ─── TYPES ─────────────────────────────────────────────────────────────────
 type Theme = "dark" | "light";
-type Page = "overview" | "incidents" | "reasoning" | "evaluations" | "traces" | "connectors" | "settings";
+type Page = "home" | "overview" | "incidents" | "reasoning" | "evaluations" | "traces" | "connectors" | "settings";
 
 interface StreamEvent {
   type: "start" | "text" | "tool_call" | "tool_result" | "eval" | "done" | "heartbeat";
@@ -132,7 +132,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
 // ─── MAIN APP ──────────────────────────────────────────────────────────────
 export default function ConduitApp() {
   const [theme, setTheme] = useState<Theme>("dark");
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>("home");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -141,15 +141,16 @@ export default function ConduitApp() {
   const [lastRunTime, setLastRunTime] = useState<number | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  const isDark = theme === "dark";
 
+
+  const isDark = true;
   const css = {
-    bg: isDark ? "#0a0b0e" : "#f4f5f7",
-    surface: isDark ? "#111318" : "#ffffff",
-    surface2: isDark ? "#1a1d24" : "#f8f9fa",
-    border: isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.08)",
-    text: isDark ? "#e8eaf0" : "#111318",
-    textMuted: isDark ? "rgba(232,234,240,0.45)" : "rgba(17,19,24,0.45)",
+    bg: "#040507",
+    surface: "rgba(255, 255, 255, 0.03)",
+    surface2: "rgba(255, 255, 255, 0.05)",
+    border: "rgba(255, 255, 255, 0.08)",
+    text: "#ffffff",
+    textMuted: "rgba(255, 255, 255, 0.55)",
     accent: "#22c55e",
     accentBlue: "#3b82f6",
     accentAmber: "#f59e0b",
@@ -201,6 +202,108 @@ export default function ConduitApp() {
     } catch { setRunning(false); }
   };
 
+
+  // ─── HOME ──────────────────────────────────────────────────────────────────
+  const FrameSequence = () => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [images, setImages] = useState<HTMLImageElement[]>([]);
+    const [loaded, setLoaded] = useState(false);
+    const frameCount = 192;
+
+    useEffect(() => {
+      let isMounted = true;
+      const preloadImages = () => {
+        const loadedImages: HTMLImageElement[] = [];
+        let loadedCount = 0;
+
+        for (let i = 1; i <= frameCount; i++) {
+          const img = new Image();
+          img.src = `/frame/ezgif-frame-${String(i).padStart(3, '0')}.jpg`;
+          img.onload = () => {
+            loadedCount++;
+            if (loadedCount === frameCount && isMounted) {
+              setLoaded(true);
+            }
+          };
+          img.onerror = () => {
+            // In case some frames are missing, just count it loaded to not block forever
+            loadedCount++;
+            if (loadedCount === frameCount && isMounted) {
+              setLoaded(true);
+            }
+          };
+          loadedImages.push(img);
+        }
+        if (isMounted) {
+          setImages(loadedImages);
+        }
+      };
+      preloadImages();
+      return () => { isMounted = false; };
+    }, []);
+
+    useEffect(() => {
+      if (!loaded || !canvasRef.current || images.length === 0) return;
+
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const cw = images[0].width || 1280;
+      const ch = images[0].height || 720;
+      canvas.width = cw;
+      canvas.height = ch;
+
+      let frame = 0;
+      let animationId: number;
+      let lastTime = performance.now();
+      const targetFps = 30; // 30fps
+      const interval = 1000 / targetFps;
+
+      const render = (time: number) => {
+        animationId = requestAnimationFrame(render);
+        const deltaTime = time - lastTime;
+
+        if (deltaTime > interval) {
+          lastTime = time - (deltaTime % interval);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          if (images[frame] && images[frame].width > 0) {
+            ctx.drawImage(images[frame], 0, 0, canvas.width, canvas.height);
+          }
+          frame = (frame + 1) % frameCount;
+        }
+      };
+
+      animationId = requestAnimationFrame(render);
+
+      return () => cancelAnimationFrame(animationId);
+    }, [loaded, images]);
+
+    return (
+      <>
+        <canvas
+          ref={canvasRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            zIndex: 0,
+            opacity: loaded ? 1 : 0,
+            transition: 'opacity 1s ease-in-out'
+          }}
+        />
+        {!loaded && (
+          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0b0e', zIndex: 1 }}>
+            <div style={{ color: '#fff', fontFamily: "'DM Mono', monospace", opacity: 0.5, animation: 'pulse 1.5s infinite' }}>Loading Pipeline Stream...</div>
+          </div>
+        )}
+      </>
+    );
+  };
+
   // ── OVERVIEW ──────────────────────────────────────────────────────────────
   const OverviewPage = () => {
     const healthyCount = MOCK_CONNECTORS.filter(c => c.health === "healthy").length;
@@ -225,7 +328,7 @@ export default function ConduitApp() {
     return (
       <div>
         <div style={{ marginBottom: "2rem" }}>
-          <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>
+          <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, letterSpacing: "-0.02em" }}>
             System Overview
           </h1>
           <p style={{ fontSize: "0.8125rem", color: css.textMuted, marginTop: "0.25rem" }}>
@@ -237,7 +340,7 @@ export default function ConduitApp() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
           {metrics.map((m, i) => (
             <div key={i} style={{
-              background: css.surface, border: `1px solid ${css.border}`,
+              background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`,
               borderRadius: "12px", padding: "1.125rem",
               transition: "transform 0.15s, box-shadow 0.15s",
               cursor: "default",
@@ -258,7 +361,7 @@ export default function ConduitApp() {
         {/* Score trend + Recent incidents side by side */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
           {/* Score trend */}
-          <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
+          <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 500, color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "1rem" }}>AI Score Trend</div>
             {recentScores.length > 1 ? (
               <div style={{ display: "flex", alignItems: "flex-end", gap: "0.375rem", height: "60px" }}>
@@ -275,14 +378,14 @@ export default function ConduitApp() {
           </div>
 
           {/* Recent incidents */}
-          <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
+          <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
             <div style={{ fontSize: "0.75rem", fontWeight: 500, color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.875rem" }}>Recent Incidents</div>
             {incidents.length === 0 ? (
               <div style={{ color: css.textMuted, fontSize: "0.8125rem" }}>No incidents recorded yet</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {incidents.slice(0, 4).map((inc, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", background: css.surface2, borderRadius: "8px" }}>
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", background: css.surface2, backdropFilter: 'blur(8px)', borderRadius: "8px" }}>
                     <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: scoreColor(inc.overall_score), flexShrink: 0 }} />
                     <div style={{ flex: 1, fontSize: "0.75rem", color: css.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {inc.key_finding?.slice(0, 55) || "Incident analyzed"}...
@@ -296,14 +399,14 @@ export default function ConduitApp() {
         </div>
 
         {/* Connector health strip */}
-        <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
+        <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
           <div style={{ fontSize: "0.75rem", fontWeight: 500, color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.875rem" }}>Connector Health</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {MOCK_CONNECTORS.map((c, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
                 <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: healthColor(c.health), flexShrink: 0 }} />
                 <div style={{ width: "120px", fontSize: "0.8125rem", fontWeight: 500, color: css.text }}>{c.service}</div>
-                <div style={{ flex: 1, height: "4px", background: css.surface2, borderRadius: "2px", overflow: "hidden" }}>
+                <div style={{ flex: 1, height: "4px", background: css.surface2, backdropFilter: 'blur(8px)', borderRadius: "2px", overflow: "hidden" }}>
                   <div style={{ height: "100%", width: c.health === "healthy" ? "100%" : c.health === "degraded" ? "60%" : c.health === "error" ? "30%" : "10%", background: healthColor(c.health), borderRadius: "2px", transition: "width 1s ease" }} />
                 </div>
                 <div style={{ fontSize: "0.6875rem", color: css.textMuted, width: "80px", textAlign: "right" }}>{c.issue || "Healthy"}</div>
@@ -338,7 +441,7 @@ export default function ConduitApp() {
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
           <div>
-            <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>Incidents</h1>
+            <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, letterSpacing: "-0.02em" }}>Incidents</h1>
             <p style={{ fontSize: "0.8125rem", color: css.textMuted, marginTop: "0.25rem" }}>{incidents.length} total incidents recorded</p>
           </div>
           <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -355,7 +458,7 @@ export default function ConduitApp() {
         </div>
 
         {filtered.length === 0 ? (
-          <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "3rem", textAlign: "center", color: css.textMuted }}>
+          <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "3rem", textAlign: "center", color: css.textMuted }}>
             No incidents yet. Run a pipeline check to see results.
           </div>
         ) : (
@@ -364,7 +467,7 @@ export default function ConduitApp() {
               const st = statusLabel(inc.overall_score);
               const isOpen = expanded === inc.incident_id;
               return (
-                <div key={i} style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", overflow: "hidden", transition: "border-color 0.15s" }}>
+                <div key={i} style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", overflow: "hidden", transition: "border-color 0.15s" }}>
                   <div style={{ padding: "1rem 1.25rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "1rem" }}
                     onClick={() => setExpanded(isOpen ? null : inc.incident_id)}>
                     <PulsingDot color={st.color} />
@@ -430,7 +533,7 @@ export default function ConduitApp() {
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
           <div>
-            <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>Live Reasoning</h1>
+            <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, letterSpacing: "-0.02em" }}>Live Reasoning</h1>
             <p style={{ fontSize: "0.8125rem", color: css.textMuted, marginTop: "0.25rem" }}>Real-time agent decision stream</p>
           </div>
           <button onClick={runAgent} disabled={running} style={{
@@ -447,7 +550,7 @@ export default function ConduitApp() {
         </div>
 
         <div style={{
-          background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px",
+          background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px",
           padding: "1.25rem", minHeight: "400px", maxHeight: "65vh", overflowY: "auto",
           fontFamily: "'DM Mono', monospace",
         }}>
@@ -480,7 +583,7 @@ export default function ConduitApp() {
                       <span style={{ fontSize: "0.8125rem", color: css.accentBlue }}>Agent session started</span>
                     )}
                     {evt.type === "eval" && evt.scores && (
-                      <div style={{ background: css.surface2, borderRadius: "8px", padding: "0.75rem 1rem" }}>
+                      <div style={{ background: css.surface2, backdropFilter: 'blur(8px)', borderRadius: "8px", padding: "0.75rem 1rem" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.375rem" }}>
                           <span style={{ fontSize: "0.75rem", color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Eval complete</span>
                           <span style={{ fontSize: "1.125rem", fontWeight: 700, color: scoreColor(evt.scores.overall_score as number) }}>{evt.scores.overall_score as number}/5</span>
@@ -519,7 +622,7 @@ export default function ConduitApp() {
     return (
       <div>
         <div style={{ marginBottom: "1.5rem" }}>
-          <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>Evaluations</h1>
+          <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, letterSpacing: "-0.02em" }}>Evaluations</h1>
           <p style={{ fontSize: "0.8125rem", color: css.textMuted, marginTop: "0.25rem" }}>LLM-as-a-Judge quality metrics</p>
         </div>
 
@@ -529,7 +632,7 @@ export default function ConduitApp() {
             { label: "Total Evaluated", value: incidents.length, color: css.accentBlue },
             { label: "Top Score", value: incidents.length ? Math.max(...incidents.map(i => i.overall_score)) + "/5" : "—", color: css.accent },
           ].map((m, i) => (
-            <div key={i} style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem", textAlign: "center" }}>
+            <div key={i} style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem", textAlign: "center" }}>
               <div style={{ fontSize: "0.6875rem", color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>{m.label}</div>
               <div style={{ fontSize: "2rem", fontWeight: 700, color: m.color, fontFamily: "'DM Mono', monospace" }}>{m.value}</div>
             </div>
@@ -539,19 +642,19 @@ export default function ConduitApp() {
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
           {/* Radar chart */}
           {latest && (
-            <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem", display: "flex", flexDirection: "column", alignItems: "center" }}>
               <div style={{ fontSize: "0.6875rem", color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.75rem" }}>Latest Run</div>
               <RadarChart scores={latest as any} />
             </div>
           )}
 
           {/* Score distribution */}
-          <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
+          <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
             <div style={{ fontSize: "0.6875rem", color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "1rem" }}>Score Distribution</div>
             {scoreDistribution.map(d => (
               <div key={d.score} style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.625rem" }}>
                 <span style={{ fontSize: "0.75rem", fontFamily: "'DM Mono', monospace", color: scoreColor(d.score), width: "16px" }}>{d.score}</span>
-                <div style={{ flex: 1, height: "8px", background: css.surface2, borderRadius: "4px", overflow: "hidden" }}>
+                <div style={{ flex: 1, height: "8px", background: css.surface2, backdropFilter: 'blur(8px)', borderRadius: "4px", overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${(d.count / maxCount) * 100}%`, background: scoreColor(d.score), borderRadius: "4px", transition: "width 0.8s ease" }} />
                 </div>
                 <span style={{ fontSize: "0.75rem", color: css.textMuted, width: "20px", textAlign: "right" }}>{d.count}</span>
@@ -561,14 +664,14 @@ export default function ConduitApp() {
         </div>
 
         {/* Recent evaluations list */}
-        <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
+        <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1.25rem" }}>
           <div style={{ fontSize: "0.6875rem", color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.875rem" }}>Evaluation Log</div>
           {incidents.length === 0 ? (
             <div style={{ color: css.textMuted, fontSize: "0.8125rem" }}>No evaluations yet</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               {incidents.slice(0, 8).map((inc, i) => (
-                <div key={i} style={{ display: "flex", gap: "0.875rem", padding: "0.625rem 0.875rem", background: css.surface2, borderRadius: "8px", alignItems: "flex-start" }}>
+                <div key={i} style={{ display: "flex", gap: "0.875rem", padding: "0.625rem 0.875rem", background: css.surface2, backdropFilter: 'blur(8px)', borderRadius: "8px", alignItems: "flex-start" }}>
                   <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: `${scoreColor(inc.overall_score)}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <span style={{ fontSize: "0.875rem", fontWeight: 700, color: scoreColor(inc.overall_score), fontFamily: "'DM Mono', monospace" }}>{inc.overall_score}</span>
                   </div>
@@ -589,10 +692,10 @@ export default function ConduitApp() {
   const TracesPage = () => (
     <div>
       <div style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>Phoenix Traces</h1>
+        <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, letterSpacing: "-0.02em" }}>Phoenix Traces</h1>
         <p style={{ fontSize: "0.8125rem", color: css.textMuted, marginTop: "0.25rem" }}>Full observability via Arize Phoenix</p>
       </div>
-      <div style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", overflow: "hidden" }}>
+      <div style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", overflow: "hidden" }}>
         <div style={{ padding: "1rem 1.25rem", borderBottom: `1px solid ${css.border}`, display: "flex", gap: "0.875rem", alignItems: "center" }}>
           <div style={{ fontSize: "0.6875rem", fontWeight: 600, color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", flex: 2 }}>Trace</div>
           <div style={{ fontSize: "0.6875rem", fontWeight: 600, color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>Tools</div>
@@ -617,7 +720,7 @@ export default function ConduitApp() {
           </div>
         ))}
       </div>
-      <div style={{ marginTop: "1rem", padding: "0.875rem 1.25rem", background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ marginTop: "1rem", padding: "0.875rem 1.25rem", background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: "0.8125rem", color: css.textMuted }}>Full trace details available in Phoenix Cloud</span>
         <a href="https://app.phoenix.arize.com" target="_blank" rel="noreferrer" style={{ fontSize: "0.8125rem", color: css.accentBlue, textDecoration: "none", fontWeight: 500 }}>Open Phoenix →</a>
       </div>
@@ -629,7 +732,7 @@ export default function ConduitApp() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>Connectors</h1>
+          <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, letterSpacing: "-0.02em" }}>Connectors</h1>
           <p style={{ fontSize: "0.8125rem", color: css.textMuted, marginTop: "0.25rem" }}>Fivetran data pipeline status</p>
         </div>
         <button onClick={runAgent} disabled={running} style={{
@@ -640,7 +743,7 @@ export default function ConduitApp() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
         {MOCK_CONNECTORS.map((c, i) => (
-          <div key={i} style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1rem 1.25rem", display: "flex", alignItems: "center", gap: "1.25rem" }}>
+          <div key={i} style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", padding: "1rem 1.25rem", display: "flex", alignItems: "center", gap: "1.25rem" }}>
             <PulsingDot color={healthColor(c.health)} />
             <div style={{ width: "120px" }}>
               <div style={{ fontSize: "0.875rem", fontWeight: 600, color: css.text }}>{c.service}</div>
@@ -656,7 +759,7 @@ export default function ConduitApp() {
               {["↺", "⏸", "🔍"].map((icon, j) => (
                 <button key={j} title={["Retry", "Pause", "Logs"][j]} style={{
                   width: "28px", height: "28px", borderRadius: "6px", border: `1px solid ${css.border}`,
-                  background: css.surface2, color: css.textMuted, cursor: "pointer", fontSize: "0.75rem",
+                  background: css.surface2, backdropFilter: 'blur(8px)', color: css.textMuted, cursor: "pointer", fontSize: "0.75rem",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>{icon}</button>
               ))}
@@ -671,23 +774,29 @@ export default function ConduitApp() {
   const SettingsPage = () => (
     <div>
       <div style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>Settings</h1>
+        <h1 style={{ fontSize: "1.375rem", fontWeight: 600, color: css.text, letterSpacing: "-0.02em" }}>Settings</h1>
       </div>
       {[
-        { label: "Appearance", items: [
-          { name: "Theme", desc: "Toggle between dark and light mode", control: <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{ padding: "0.375rem 1rem", borderRadius: "6px", background: css.surface2, border: `1px solid ${css.border}`, color: css.text, cursor: "pointer", fontSize: "0.8125rem" }}>{theme === "dark" ? "☀ Light" : "🌙 Dark"}</button> },
-        ]},
-        { label: "Agent Configuration", items: [
-          { name: "API Endpoint", desc: "Backend URL", control: <code style={{ fontSize: "0.75rem", color: css.accentBlue, fontFamily: "'DM Mono', monospace" }}>{API}</code> },
-          { name: "Model", desc: "Gemini model in use", control: <code style={{ fontSize: "0.75rem", color: css.accent, fontFamily: "'DM Mono', monospace" }}>gemini-2.5-flash</code> },
-          { name: "Demo Mode", desc: "Use mock Fivetran data", control: <span style={{ fontSize: "0.75rem", padding: "0.2rem 0.6rem", borderRadius: "4px", background: "rgba(34,197,94,0.15)", color: css.accent }}>Active</span> },
-        ]},
-        { label: "Observability", items: [
-          { name: "Phoenix Project", desc: "Arize tracing project", control: <code style={{ fontSize: "0.75rem", color: "#a78bfa", fontFamily: "'DM Mono', monospace" }}>conduit</code> },
-          { name: "Open Phoenix", desc: "View full trace details", control: <a href="https://app.phoenix.arize.com" target="_blank" rel="noreferrer" style={{ fontSize: "0.8125rem", color: css.accentBlue, textDecoration: "none", fontWeight: 500 }}>Open →</a> },
-        ]},
+        {
+          label: "Appearance", items: [
+            { name: "Theme", desc: "Toggle between dark and light mode", control: <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{ padding: "0.375rem 1rem", borderRadius: "6px", background: css.surface2, backdropFilter: 'blur(8px)', border: `1px solid ${css.border}`, color: css.text, cursor: "pointer", fontSize: "0.8125rem" }}>{theme === "dark" ? "☀ Light" : "🌙 Dark"}</button> },
+          ]
+        },
+        {
+          label: "Agent Configuration", items: [
+            { name: "API Endpoint", desc: "Backend URL", control: <code style={{ fontSize: "0.75rem", color: css.accentBlue, fontFamily: "'DM Mono', monospace" }}>{API}</code> },
+            { name: "Model", desc: "Gemini model in use", control: <code style={{ fontSize: "0.75rem", color: css.accent, fontFamily: "'DM Mono', monospace" }}>gemini-2.5-flash</code> },
+            { name: "Demo Mode", desc: "Use mock Fivetran data", control: <span style={{ fontSize: "0.75rem", padding: "0.2rem 0.6rem", borderRadius: "4px", background: "rgba(34,197,94,0.15)", color: css.accent }}>Active</span> },
+          ]
+        },
+        {
+          label: "Observability", items: [
+            { name: "Phoenix Project", desc: "Arize tracing project", control: <code style={{ fontSize: "0.75rem", color: "#a78bfa", fontFamily: "'DM Mono', monospace" }}>conduit</code> },
+            { name: "Open Phoenix", desc: "View full trace details", control: <a href="https://app.phoenix.arize.com" target="_blank" rel="noreferrer" style={{ fontSize: "0.8125rem", color: css.accentBlue, textDecoration: "none", fontWeight: 500 }}>Open →</a> },
+          ]
+        },
       ].map((section, si) => (
-        <div key={si} style={{ background: css.surface, border: `1px solid ${css.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "0.75rem" }}>
+        <div key={si} style={{ background: css.surface, backdropFilter: 'blur(16px)', border: `1px solid ${css.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "0.75rem" }}>
           <div style={{ padding: "0.875rem 1.25rem", borderBottom: `1px solid ${css.border}`, fontSize: "0.75rem", fontWeight: 600, color: css.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{section.label}</div>
           {section.items.map((item, ii) => (
             <div key={ii} style={{ padding: "0.875rem 1.25rem", borderBottom: ii < section.items.length - 1 ? `1px solid ${css.border}` : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -703,7 +812,7 @@ export default function ConduitApp() {
     </div>
   );
 
-  const pageComponents: Record<Page, React.ReactNode> = {
+  const pageComponents: Record<Exclude<Page, "home">, React.ReactNode> = {
     overview: <OverviewPage />,
     incidents: <IncidentsPage />,
     reasoning: <ReasoningPage />,
@@ -713,12 +822,116 @@ export default function ConduitApp() {
     settings: <SettingsPage />,
   };
 
+  if (page === "home") {
+    return (
+      <>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'DM Sans', sans-serif; background: #000; }
+          @keyframes pulse { 0%,100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+        `}</style>
+        <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden", background: "#0a0b0e", fontFamily: "'DM Sans', sans-serif" }}>
+          <FrameSequence />
+
+          {/* Overlay gradient so text is readable */}
+          <div style={{ position: "absolute", top: 0, left: 0, width: "50%", height: "100%", background: "linear-gradient(to right, rgba(10,11,14,0.95) 0%, rgba(10,11,14,0.4) 50%, transparent 100%)", zIndex: 1, pointerEvents: "none" }} />
+
+          {/* Global Navigation Header transparent over video */}
+          <header style={{
+            position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "1.5rem 3rem", background: "linear-gradient(to bottom, rgba(10,11,14,0.8) 0%, transparent 100%)"
+          }}>
+            {/* Logo */}
+            <div
+              onClick={() => setPage("home")}
+              style={{ display: "flex", alignItems: "center", gap: "0.875rem", cursor: "pointer" }}
+            >
+              <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: css.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 20px rgba(34,197,94,0.3)" }}>
+                <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "#000", fontFamily: "'DM Mono', monospace" }}>C</span>
+              </div>
+              <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "#fff", fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>Conduit</span>
+            </div>
+
+            {/* Nav links */}
+            <nav style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
+              {["overview", "incidents", "reasoning", "connectors"].map((item) => (
+                <button key={item} onClick={() => setPage(item as Page)} style={{
+                  background: "transparent", border: "none", color: "rgba(255,255,255,0.7)",
+                  fontSize: "0.9375rem", fontWeight: 500, cursor: "pointer", textTransform: "capitalize",
+                  transition: "color 0.2s"
+                }} onMouseEnter={e => e.currentTarget.style.color = "#fff"} onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.7)"}>
+                  {item}
+                </button>
+              ))}
+              <div style={{ width: "1px", height: "1.5rem", background: "rgba(255,255,255,0.15)" }} />
+              <button onClick={() => setPage("settings")} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "1.25rem", cursor: "pointer", transition: "color 0.2s" }} onMouseEnter={e => e.currentTarget.style.color = "#fff"} onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.7)"}>
+                ⚙
+              </button>
+            </nav>
+          </header>
+
+          {/* Hero Content */}
+          <div style={{
+            position: "absolute", top: "50%", left: "4rem", transform: "translateY(-50%)", zIndex: 10,
+            maxWidth: "680px"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.25rem", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", padding: "0.5rem 1rem", borderRadius: "99px", width: "fit-content" }}>
+              <PulsingDot color={css.accent} />
+              <span style={{ fontSize: "0.75rem", color: css.accent, fontWeight: 600, fontFamily: "'DM Mono', monospace", letterSpacing: "0.08em" }}>PIPELINE ACTIVE</span>
+            </div>
+            <h1 style={{ fontSize: "4.5rem", fontWeight: 700, color: "#fff", lineHeight: 1.05, marginBottom: "1.5rem", letterSpacing: "-0.03em" }}>
+              Data Pipelines.<br />
+              <span style={{ color: "transparent", WebkitTextStroke: "1px rgba(255,255,255,0.8)" }}>Self-Healing.</span><br />
+              Intelligent.
+            </h1>
+            <p style={{ fontSize: "1.125rem", color: "rgba(255,255,255,0.7)", lineHeight: 1.6, marginBottom: "2.5rem", maxWidth: "480px", fontWeight: 300 }}>
+              Conduit monitors, diagnoses, and autonomously resolves data incidents before they impact your business logic.
+            </p>
+            <div style={{ display: "flex", gap: "1rem" }}>
+              <button onClick={() => setPage("overview")} style={{
+                padding: "1rem 2rem", borderRadius: "8px", background: css.accent, color: "#000",
+                fontSize: "1rem", fontWeight: 600, border: "none", cursor: "pointer",
+                boxShadow: "0 0 24px rgba(34, 197, 94, 0.4)", transition: "all 0.2s"
+              }} onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 30px rgba(34, 197, 94, 0.6)"; }} onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 0 24px rgba(34, 197, 94, 0.4)"; }}>
+                Enter Dashboard →
+              </button>
+              <button onClick={() => setPage("reasoning")} style={{
+                padding: "1rem 2rem", borderRadius: "8px", background: "rgba(255,255,255,0.05)", color: "#fff",
+                fontSize: "1rem", fontWeight: 500, border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer",
+                backdropFilter: "blur(10px)", transition: "all 0.2s"
+              }} onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.border = "1px solid rgba(255,255,255,0.3)"; }} onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.border = "1px solid rgba(255,255,255,0.15)"; }}>
+                View Live Reasoning
+              </button>
+            </div>
+
+            <div style={{ marginTop: "4rem", display: "flex", gap: "2.5rem" }}>
+              <div>
+                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#fff", fontFamily: "'DM Mono', monospace" }}>99.9%</div>
+                <div style={{ fontSize: "0.8125rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: "0.25rem" }}>Uptime</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#fff", fontFamily: "'DM Mono', monospace" }}>{`< 2.1s`}</div>
+                <div style={{ fontSize: "0.8125rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: "0.25rem" }}>Avg Reaction</div>
+              </div>
+              <div>
+                <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#fff", fontFamily: "'DM Mono', monospace" }}>24/7</div>
+                <div style={{ fontSize: "0.8125rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: "0.25rem" }}>Coverage</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; }
+        body { font-family: 'DM Sans', sans-serif; background: #040507; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
@@ -729,21 +942,21 @@ export default function ConduitApp() {
         .animate-ping { animation: ping 1.2s cubic-bezier(0,0,0.2,1) infinite; }
       `}</style>
 
-      <div style={{ display: "flex", height: "100vh", background: css.bg, color: css.text, overflow: "hidden" }}>
+      <div style={{ display: "flex", height: "100vh", background: "radial-gradient(circle at 15% 50%, rgba(34, 197, 94, 0.08), transparent 25%), radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 25%), #040507", color: css.text, overflow: "hidden" }}>
 
         {/* Sidebar */}
         <aside style={{
           width: sidebarOpen ? "220px" : "56px", flexShrink: 0,
-          background: css.surface, borderRight: `1px solid ${css.border}`,
+          background: css.surface, backdropFilter: 'blur(16px)', borderRight: `1px solid ${css.border}`,
           display: "flex", flexDirection: "column",
           transition: "width 0.2s ease", overflow: "hidden",
         }}>
           {/* Logo */}
-          <div style={{ padding: "1.25rem", borderBottom: `1px solid ${css.border}`, display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <div onClick={() => setPage("home")} style={{ padding: "1.25rem", borderBottom: `1px solid ${css.border}`, display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
             <div style={{ width: "28px", height: "28px", borderRadius: "8px", background: css.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#000", fontFamily: "'DM Mono', monospace" }}>C</span>
+              <span style={{ fontSize: "1rem", fontWeight: 700, color: "#000", fontFamily: "'DM Mono', monospace" }}>C</span>
             </div>
-            {sidebarOpen && <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: css.text, fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>Conduit</span>}
+            {sidebarOpen && <span style={{ fontSize: "1.125rem", fontWeight: 700, color: css.text, letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>Conduit</span>}
           </div>
 
           {/* Nav items */}
@@ -787,7 +1000,7 @@ export default function ConduitApp() {
           <header style={{
             height: "52px", borderBottom: `1px solid ${css.border}`,
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "0 1.5rem", background: css.surface, flexShrink: 0,
+            padding: "0 1.5rem", background: css.surface, backdropFilter: 'blur(16px)', flexShrink: 0,
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
               <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: css.text }}>{NAV_ITEMS.find(n => n.id === page)?.label}</span>
@@ -797,17 +1010,14 @@ export default function ConduitApp() {
                 <PulsingDot color={css.accent} />
                 <span style={{ fontSize: "0.6875rem", color: css.textMuted, fontFamily: "'DM Mono', monospace" }}>SYSTEM NOMINAL</span>
               </div>
-              <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{
-                width: "32px", height: "32px", borderRadius: "8px", border: `1px solid ${css.border}`,
-                background: css.surface2, cursor: "pointer", fontSize: "0.875rem",
-                display: "flex", alignItems: "center", justifyContent: "center", color: css.textMuted,
-              }}>{theme === "dark" ? "☀" : "🌙"}</button>
               <button onClick={runAgent} disabled={running} style={{
                 padding: "0.375rem 1rem", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 600,
                 background: running ? css.surface2 : css.accent,
                 color: running ? css.textMuted : "#000",
+                boxShadow: running ? "none" : "0 0 12px rgba(34, 197, 94, 0.4)",
                 border: "none", cursor: running ? "not-allowed" : "pointer",
-              }}>{running ? "Running..." : "▶ Run"}</button>
+                transition: "all 0.2s"
+              }} onMouseEnter={e => { if (!running) e.currentTarget.style.boxShadow = "0 0 20px rgba(34, 197, 94, 0.6)"; }} onMouseLeave={e => { if (!running) e.currentTarget.style.boxShadow = "0 0 12px rgba(34, 197, 94, 0.4)"; }}>{running ? "Running..." : "▶ Run"}</button>
             </div>
           </header>
 
