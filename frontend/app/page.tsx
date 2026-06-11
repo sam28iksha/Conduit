@@ -2101,7 +2101,10 @@ export default function ConduitApp() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                {["list_connectors", "get_details", "get_logs"].map((t) => (
+                {((inc as any).tools_called?.length
+                  ? (inc as any).tools_called
+                  : ["list_connectors", "trigger_resync", "get_logs"]
+                ).map((t: string) => (
                   <span
                     key={t}
                     style={{

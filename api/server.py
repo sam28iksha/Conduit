@@ -131,12 +131,12 @@ def agent_health():
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "agent"))
     from conduit.memory import get_average_score, load_past_scores
-    scores = load_past_scores(50)
+    all_scores = load_past_scores(9999)
     avg = get_average_score()
     return {
         "average_score": round(avg, 2),
-        "total_runs": len(scores),
-        "recent_scores": [s.get("overall_score", 0) for s in scores[-10:]]
+        "total_runs": len(all_scores),
+        "recent_scores": [s.get("overall_score", 0) for s in all_scores[-10:]]
     }
 
 
@@ -187,12 +187,14 @@ async def auto_monitor_loop():
                 trace_text = format_trace_for_eval(agent_output, tools_called, "auto_monitor")
                 scores = evaluate_agent_run(trace_text, session_id)
                 scores["timestamp"] = int(time.time())
+                scores["tools_called"] = tools_called
                 
-                # Store to eval_scores.jsonl same as manual runs
-                import json, pathlib
-                scores_file = pathlib.Path(__file__).resolve().parent.parent / "agent" / "conduit" / "eval_scores.jsonl"
-                with open(scores_file, "a") as f:
-                    f.write(json.dumps(scores) + "\n")
+                # Only persist successful evals
+                if "error" not in scores and scores.get("overall_score", 0) > 0:
+                    import json, pathlib
+                    scores_file = pathlib.Path(__file__).resolve().parent.parent / "agent" / "conduit" / "eval_scores.jsonl"
+                    with open(scores_file, "a") as f:
+                        f.write(json.dumps(scores) + "\n")
                 
                 print(f"[AutoMonitor] Score: {scores.get('overall_score', 0)}/5 — {scores.get('key_finding', '')[:80]}")
                 
@@ -248,6 +250,14 @@ async def run_agent_task(message: str, session_id: str, queue: asyncio.Queue):
         trace_text = format_trace_for_eval(agent_output, tools_called, "api_run")
         scores = evaluate_agent_run(trace_text, session_id)
         scores["timestamp"] = int(time.time())
+        scores["tools_called"] = tools_called  # store real tools
+        # Only persist if eval actually succeeded
+        if "error" not in scores and scores.get("overall_score", 0) > 0:
+            from pathlib import Path as _P
+            import json as _j
+            sf = _P(__file__).resolve().parent.parent / "agent" / "conduit" / "eval_scores.jsonl"
+            with open(sf, "a") as f:
+                f.write(_j.dumps(scores) + "\n")
         await queue.put({"type": "eval", "scores": scores})
     
     await queue.put(None)  # Signal stream complete
