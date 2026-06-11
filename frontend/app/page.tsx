@@ -47,45 +47,33 @@ interface HealthData {
   recent_scores: number[];
 }
 
-// ─── PALETTE ───────────────────────────────────────────────────────────────
-// Light dashboard theme drawn entirely from the uploaded palette
-const P = {
-  // Backgrounds
-  bg: "#D4D4DC",          // French gray — page background
-  surface: "#E2E2E8",     // slightly lighter surface for cards
-  surface2: "#CACAD4",    // slightly darker for inset areas
 
-  // Borders
+
+// ─── PALETTE ───────────────────────────────────────────────────────────────
+const P = {
+  bg: "#D4D4DC",
+  surface: "#E2E2E8",
+  surface2: "#CACAD4",
   border: "rgba(49,72,122,0.14)",
   borderStrong: "rgba(49,72,122,0.28)",
-
-  // Text
-  text: "#1a1c2e",        // near-black with a purple undertone
-  textMuted: "#4a4d6a",   // mid-tone muted
-  textHint: "#7a7d9a",    // light hint text
-
-  // Accent — YInMn Blue (primary actions, active states)
+  text: "#1a1c2e",
+  textMuted: "#4a4d6a",
+  textHint: "#7a7d9a",
   accent: "#31487A",
   accentLight: "rgba(49,72,122,0.10)",
   accentMid: "rgba(49,72,122,0.22)",
-
-  // Secondary palette colors
-  purple: "#5A3B7B",      // Eminence
+  purple: "#5A3B7B",
   purpleLight: "rgba(90,59,123,0.12)",
-  wisteria: "#A59AC9",    // Wisteria
+  wisteria: "#A59AC9",
   wisteriaLight: "rgba(165,154,201,0.18)",
-  jordy: "#8FB3E2",       // Jordy Blue
+  jordy: "#8FB3E2",
   jordyLight: "rgba(143,179,226,0.18)",
-  lilac: "#B8A9C9",       // Lilac
-  lavender: "#D9E1F1",    // Lavender web
-
-  // Score colors (mapped to palette)
+  lilac: "#B8A9C9",
+  lavender: "#D9E1F1",
   scoreHigh: "#31487A",
   scoreMid: "#5A3B7B",
   scoreLow: "#A59AC9",
   scoreFail: "#8c5a6e",
-
-  // Health colors
   healthHealthy: "#31487A",
   healthDegraded: "#5A3B7B",
   healthError: "#8c5a6e",
@@ -386,13 +374,23 @@ function RadarChart({ scores }: { scores: Record<string, number> }) {
 function TopNav({
   active,
   running,
+  monitoring,
   onNav,
   onRun,
+  onStartMonitoring,
+  onStopMonitoring,
+  lastAutoCheck,
+  alertCount,
 }: {
   active: Page;
   running: boolean;
+  monitoring: boolean;
   onNav: (p: Page) => void;
   onRun: () => void;
+  onStartMonitoring: () => void;
+  onStopMonitoring: () => void;
+  lastAutoCheck: string | null;
+  alertCount: number;
 }) {
   return (
     <header
@@ -482,19 +480,49 @@ function TopNav({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        {/* Status indicator */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <StatusDot color={P.accent} />
+          <StatusDot color={monitoring ? P.wisteria : P.accent} />
           <span
             style={{
-              fontSize: "0.6875rem",
+              fontSize: "0.625rem",
               color: P.textHint,
               fontFamily: "'DM Mono', monospace",
-              letterSpacing: "0.06em",
+              letterSpacing: "0.08em",
             }}
           >
-            SYSTEM NOMINAL
+            {monitoring
+              ? "MONITORING"
+              : lastAutoCheck
+              ? `LAST CHECK ${lastAutoCheck}`
+              : "NOMINAL"}
           </span>
         </div>
+
+        {/* Auto-monitor toggle */}
+        <button
+          onClick={monitoring ? onStopMonitoring : onStartMonitoring}
+          style={{
+            padding: "0.375rem 1rem",
+            borderRadius: 6,
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            background: monitoring ? "rgba(165,154,201,0.15)" : P.accentLight,
+            color: monitoring ? P.wisteria : P.accent,
+            border: `1px solid ${monitoring ? P.wisteria : P.accentMid}`,
+            cursor: "pointer",
+            transition: "all 0.15s",
+            fontFamily: "'DM Mono', monospace",
+            letterSpacing: "0.04em",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          {monitoring ? "Stop monitor" : "Auto-monitor"}
+        </button>
+
+        {/* Manual run */}
         <button
           onClick={onRun}
           disabled={running}
@@ -546,8 +574,15 @@ export default function ConduitApp() {
   const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
   const [running, setRunning] = useState(false);
   const [lastRunMs, setLastRunMs] = useState<number | null>(null);
+  const [lastAutoCheck, setLastAutoCheck] = useState<string | null>(null);
+  const [alertCount, setAlertCount] = useState(0);
   const [expandedIncident, setExpandedIncident] = useState<string | null>(null);
   const [incidentFilter, setIncidentFilter] = useState<"all" | "resolved" | "escalated">("all");
+
+  // ── NEW: monitoring state ─────────────────────────────────────────────────
+  const [monitoring, setMonitoring] = useState(false);
+  const monitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const esRef = useRef<EventSource | null>(null);
   const reasoningRef = useRef<HTMLDivElement>(null);
 
@@ -572,12 +607,38 @@ export default function ConduitApp() {
   }, [fetchData]);
 
   useEffect(() => {
+    if (page === "home") return;
+
+    const es = new EventSource(`${API}/alerts/stream`);
+
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+
+      if (data.type === "auto_check") {
+        setLastAutoCheck(new Date(data.timestamp).toLocaleTimeString());
+
+        if (data.needs_attention) {
+          setAlertCount((c) => c + 1);
+        }
+
+        fetchData();
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+    };
+
+    return () => es.close();
+  }, [page, fetchData]);
+
+  useEffect(() => {
     if (reasoningRef.current) {
       reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
     }
   }, [streamEvents]);
 
-  const runAgent = async () => {
+  const runAgent = useCallback(async () => {
     if (running) return;
     setRunning(true);
     setStreamEvents([]);
@@ -611,20 +672,45 @@ export default function ConduitApp() {
     } catch {
       setRunning(false);
     }
-  };
+  }, [running, fetchData]);
+
+  // ── NEW: monitoring callbacks ─────────────────────────────────────────────
+  const stopMonitoring = useCallback(() => {
+    setMonitoring(false);
+    if (monitorIntervalRef.current) {
+      clearInterval(monitorIntervalRef.current);
+      monitorIntervalRef.current = null;
+    }
+  }, []);
+
+  const startMonitoring = useCallback(() => {
+    setMonitoring(true);
+    runAgent();
+    monitorIntervalRef.current = setInterval(() => {
+      runAgent();
+    }, 5 * 60 * 1000);
+  }, [runAgent]);
+
+  // Stop monitoring on tab close / component unmount
+  useEffect(() => {
+    const handleUnload = () => stopMonitoring();
+    window.addEventListener("beforeunload", handleUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+      stopMonitoring();
+    };
+  }, [stopMonitoring]);
 
   // Derived values
   const avgScore = health?.average_score || 0;
   const totalRuns = health?.total_runs || 0;
-  const recentScores = health?.recent_scores || [];
-  const autoFixed = incidents.filter((i) => i.overall_score >= 4).length;
+  const recentScores = (health?.recent_scores ?? []).filter(s => s > 0).slice(-10);  const autoFixed = incidents.filter((i) => i.overall_score >= 4).length;
   const escalatedCount = incidents.filter((i) => i.overall_score < 3).length;
   const healthyCount = MOCK_CONNECTORS.filter((c) => c.health === "healthy").length;
   const failedCount = MOCK_CONNECTORS.filter((c) => c.health !== "healthy").length;
 
   // ── HOME PAGE ─────────────────────────────────────────────────────────────
   if (page === "home") {
-    // Frame sequence component — identical logic & paths from code 1
     const FrameSequence = () => {
       const canvasRef = useRef<HTMLCanvasElement>(null);
       const [images, setImages] = useState<HTMLImageElement[]>([]);
@@ -752,7 +838,6 @@ export default function ConduitApp() {
         >
           <FrameSequence />
 
-          {/* Left fade overlay so hero text is readable */}
           <div
             style={{
               position: "absolute",
@@ -767,7 +852,6 @@ export default function ConduitApp() {
             }}
           />
 
-          {/* Nav header */}
           <header
             style={{
               position: "absolute",
@@ -891,7 +975,6 @@ export default function ConduitApp() {
             </nav>
           </header>
 
-          {/* Hero content */}
           <div
             style={{
               position: "absolute",
@@ -985,8 +1068,7 @@ export default function ConduitApp() {
                   letterSpacing: "0.02em",
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.transform =
-                    "translateY(-2px)";
+                  (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
                   (e.currentTarget as HTMLElement).style.boxShadow =
                     "0 8px 28px rgba(49,72,122,0.65)";
                 }}
@@ -2015,7 +2097,7 @@ export default function ConduitApp() {
                   {inc.incident_id}
                 </div>
                 <div style={{ fontSize: "0.6875rem", color: P.textHint }}>
-                  Conduit agent run
+                    {inc.incident_id.startsWith("auto_") ? "Auto-monitor" : "Manual run"} · pipeline check
                 </div>
               </div>
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -2046,6 +2128,11 @@ export default function ConduitApp() {
                 >
                   {inc.overall_score}/5
                 </span>
+                <div style={{ fontSize: "0.6rem", color: P.textHint, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+                  {(inc as any).timestamp
+                    ? new Date((inc as any).timestamp * 1000).toLocaleTimeString()
+                    : "—"}
+                </div>
               </div>
             </div>
           ))
@@ -2334,11 +2421,12 @@ export default function ConduitApp() {
                 <span
                   style={{
                     fontSize: "0.75rem",
-                    color: P.textMuted,
+                    color: monitoring ? P.wisteria : P.textMuted,
                     fontFamily: "'DM Mono', monospace",
+                    fontWeight: monitoring ? 600 : 400,
                   }}
                 >
-                  Manual
+                  {monitoring ? "Every 5 min" : "Manual"}
                 </span>
               ),
             },
@@ -2437,8 +2525,13 @@ export default function ConduitApp() {
         <TopNav
           active={page}
           running={running}
+          monitoring={monitoring}
           onNav={nav}
           onRun={runAgent}
+          onStartMonitoring={startMonitoring}
+          onStopMonitoring={stopMonitoring}
+          lastAutoCheck={lastAutoCheck}
+          alertCount={alertCount}
         />
         <main
           style={{

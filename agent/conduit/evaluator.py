@@ -9,7 +9,14 @@ from google.genai import types
 
 
 def get_gemini_client():
-    return genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
+    print("PROJECT:", os.environ.get("GOOGLE_CLOUD_PROJECT"))
+    print("LOCATION:", os.environ.get("GOOGLE_CLOUD_LOCATION"))
+    print("VERTEX:", os.environ.get("GOOGLE_GENAI_USE_VERTEXAI"))
+    return genai.Client(
+        vertexai=True,
+        project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+        location=os.environ.get("GOOGLE_CLOUD_LOCATION"),
+    )
 
 
 EVAL_PROMPT = """You are an expert evaluator for an autonomous data pipeline incident response agent.
@@ -36,11 +43,62 @@ Respond ONLY with valid JSON, no markdown, no explanation:
   "key_finding": "",
   "improvement_suggestion": ""
 }}
+CRITICAL: key_finding and improvement_suggestion must be single-line strings with no newlines.
 """
 
 
 def evaluate_agent_run(trace_text: str, incident_id: str) -> dict:
-    """Score an agent run using LLM-as-a-Judge."""
+    client = get_gemini_client()
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=EVAL_PROMPT.format(trace_text=trace_text),
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=2048,
+            )
+        )
+        raw = response.text.strip()
+
+        # Strip markdown fences
+        if "```" in raw:
+            parts = raw.split("```")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("json"):
+                    part = part[4:].strip()
+                if part.startswith("{"):
+                    raw = part
+                    break
+
+        # Find the JSON object boundaries — handles leading/trailing text
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start == -1 or end == 0:
+            raise ValueError("No JSON object found in response")
+        raw = raw[start:end]
+
+        # Remove literal newlines inside JSON string values
+        # (Gemini sometimes wraps long strings with actual \n)
+        import re
+        # Replace unescaped newlines inside quoted strings
+        raw = re.sub(r'(?<!\\)\n', ' ', raw)
+        # Remove control characters that break JSON
+        raw = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
+
+        scores = json.loads(raw)
+        scores["incident_id"] = incident_id
+        return scores
+
+    except Exception as e:
+        print(f"[EVAL ERROR] {type(e).__name__}: {e}")
+        return {
+            "incident_id": incident_id,
+            "error": str(e),
+            "overall_score": 0,
+            "key_finding": "Evaluation failed",
+            "improvement_suggestion": "Check evaluator configuration"
+        }
     client = get_gemini_client()
     
     try:
