@@ -1,74 +1,180 @@
-# Gemini hackathon starter
 
-End-to-end template for the **Arize @ Google Cloud Partnerships Hackathon** track: a small **Google ADK** agent (pattern from [google/adk-samples personalized-shopping](https://github.com/google/adk-samples/tree/main/python/agents/personalized-shopping)), **OpenInference** instrumentation for ADK, **[phoenix.otel.register](https://arize.com/docs/phoenix/get-started/get-started-tracing)** for Phoenix Cloud tracing, and **Gemini CLI** MCP config for `@arizeai/phoenix-mcp`.
 
-This repo uses a **tiny in-memory catalog** so you can run locally in minutes (no PyTorch, Pyserini, or multi-gigabyte product downloads). The agent still exposes the same **search** / **click** tools and a shopping-focused system prompt derived from the upstream sample.
+# Conduit
+
+> Autonomous data pipeline incident response, powered by Gemini and Arize Phoenix.
+
+Conduit monitors your Fivetran data pipelines 24/7, diagnoses failures, fixes what it can autonomously, and escalates to humans with full context when it cannot. Every decision is traced, scored by an LLM judge, and fed back into the agent as lessons — so it gets measurably better over time.
+
+Built for the **Google Cloud Rapid Agent Hackathon** — Arize track.
+
+![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue.svg)
+![Framework](https://img.shields.io/badge/framework-Google%20ADK-orange.svg)
+![Partner](https://img.shields.io/badge/partner-Arize%20Phoenix-purple.svg)
+
+---
+
+## What It Does
+
+| Failure Type | Conduit's Response |
+|---|---|
+| Schema drift | Triggers re-sync, verifies connector moves to `syncing` |
+| Rate limit (429) | Triggers re-sync after backoff window |
+| Auth expiry | Escalates to human with full credentials context |
+| Network error | Triggers re-sync, monitors recovery |
+| Unknown | Pulls connector logs, classifies, decides |
+
+After every run, a second Gemini call scores the agent's decisions across four dimensions — **diagnosis accuracy**, **action appropriateness**, **reasoning clarity**, and **escalation judgment**. Low-scoring runs are injected into the agent's system prompt as lessons before the next incident. The agent reads its own failures and improves.
+
+---
+
+## Architecture
+
+┌─────────────────────────────────────────────────────────┐ │ Next.js Frontend │ │ Overview · Live Reasoning · Evaluations · Traces │ └──────────────────────┬──────────────────────────────────┘ │ SSE stream + REST ┌──────────────────────▼──────────────────────────────────┐ │ FastAPI Backend │ │ api/server.py (Cloud Run) │ └──────────────────────┬──────────────────────────────────┘ │ ┌──────────────────────▼──────────────────────────────────┐ │ Google ADK Agent │ │ Gemini 2.5 Flash reasoning │ │ │ │ Tools Self-improvement │ │ ├─ list_connectors ├─ LLM-as-a-Judge evaluator │ │ ├─ get_connector_details ├─ eval_scores.jsonl │ │ ├─ get_connector_logs └─ memory.py lesson injector │ │ ├─ trigger_resync │ │ ├─ pause_connector Observability │ │ └─ resume_connector └─ Arize Phoenix (all spans) │ └──────────────────────┬──────────────────────────────────┘ │ ┌──────────────────────▼──────────────────────────────────┐ │ Fivetran REST API │ │ Real connector data · Sync management │ └─────────────────────────────────────────────────────────┘
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Agent runtime | [Google ADK](https://google.github.io/adk-docs/) (code-first Agent Builder path) |
+| LLM | Gemini 2.5 Flash via Vertex AI |
+| Observability | [Arize Phoenix](https://phoenix.arize.com/) + OpenInference auto-instrumentation |
+| Data pipelines | [Fivetran REST API](https://fivetran.com/docs/rest-api) |
+| Backend | FastAPI + Server-Sent Events |
+| Frontend | Next.js 16 + Tailwind |
+| Hosting | Google Cloud Run (backend) + Vercel (frontend) |
+
+---
 
 ## Prerequisites
 
-- Python 3.10–3.12
-- [uv](https://docs.astral.sh/uv/)
-- Google auth for Gemini: either `GOOGLE_API_KEY` **or** Vertex (`gcloud auth application-default login` + project/location)
-- Phoenix Cloud API key ([Phoenix](https://app.phoenix.arize.com))
+- Python 3.12+
+- Node.js 18+
+- [uv](https://github.com/astral-sh/uv) (`pip install uv`)
+- Google Cloud project with Vertex AI enabled
+- Arize Phoenix Cloud account ([free tier](https://app.phoenix.arize.com/))
+- Fivetran account ([14-day free trial](https://fivetran.com/signup))
 
-## 10-minute quickstart
+---
 
-1. **Clone and install**
-  ```bash
-   cd gemini-hackathon
-   cp .env.example .env
-   # Edit .env: PHOENIX_API_KEY, PHOENIX_COLLECTOR_ENDPOINT (Hostname with /s/...), and either GOOGLE_API_KEY or Vertex settings.
-   uv sync
-  ```
-2. **Run a traced shopping turn**
-  ```bash
-   make run MESSAGE='Find a floral dress in size M'
-  ```
-3. **Open Phoenix** — project name defaults to `PHOENIX_PROJECT_NAME` (`gemini-hackathon`). Confirm LLM and tool spans appear.
-4. **(Optional) ADK CLI**
-  ```bash
-   make run-adk
-   # Find a floral dress in size M
-  ```
-   This path also loads `.env` and initializes Phoenix tracing.
+## Local Setup
 
-### Phoenix MCP (Gemini CLI)
+### 1. Clone the repo
 
-Phoenix MCP runs **inside Gemini CLI**, not inside the Python ADK process. After traces are flowing from `make run`, you can inspect the same Phoenix space from the CLI. Setup patterns and clients are covered in [Phoenix MCP server](https://arize.com/docs/phoenix/integrations/phoenix-mcp-server).
+```bash
+git clone https://github.com/YOUR_USERNAME/conduit.git
+cd conduit
+2. Install Python dependencies
+cd gemini-hackathon
+uv sync
+3. Configure environment variables
+cp .env.example .env
+Open .env and fill in:
+# Google Cloud / Vertex AI
+GOOGLE_GENAI_USE_VERTEXAI=true
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
 
-1. **Configure MCP** — Ensure `[.gemini/settings.json](.gemini/settings.json)` in this repo (or `~/.gemini/settings.json`) includes the `phoenix` server with `@arizeai/phoenix-mcp@latest`. Set `--baseUrl` to your Phoenix space hostname (same idea as `PHOENIX_COLLECTOR_ENDPOINT`: `https://app.phoenix.arize.com/s/your-space`) and set `--apiKey` to your Phoenix API key (`px_live_...`), or keep keys only in env if your CLI supports that pattern.
-2. **Export your API key** in the shell that launches Gemini CLI (if the MCP server reads it from the environment):
-  ```bash
-   export PHOENIX_API_KEY=...
-  ```
-3. **Start Gemini CLI** from the repo root (or merge the `mcpServers` block into your global Gemini config). Restart the CLI if you just changed MCP settings.
-4. **Agent queries Phoenix via MCP (runtime superpower)** — With `@arizeai/phoenix-mcp` configured, the assistant gets **tools** over your Phoenix workspace (traces, sessions, experiments, prompts, datasets, and more). Try prompts such as:
-  - *“In Phoenix, show me the last 3 traces in my **gemini-hackathon** project.”*
-  - *“In Phoenix, summarize my latest experiment results.”*
-  - *“In Phoenix, create a prompt that classifies user intent.”*
-   Additional ideas (sessions, annotation configs, datasets): [Using the Phoenix MCP server](https://arize.com/docs/phoenix/integrations/phoenix-mcp-server#using-the-phoenix-mcp-server).
-5. **(Optional)** The same file defines **Phoenix Docs MCP** (`phoenix-docs`) for in-IDE Phoenix documentation.
+# Arize Phoenix
+PHOENIX_API_KEY=px_live_xxxxxxxxxxxx
+PHOENIX_COLLECTOR_ENDPOINT=https://app.phoenix.arize.com/s/your-space-id
+PHOENIX_PROJECT_NAME=conduit
 
-More context: [Phoenix docs](https://arize.com/docs/phoenix).
+# Fivetran
+FIVETRAN_API_KEY=your_fivetran_key
+FIVETRAN_API_SECRET=your_fivetran_secret
 
-## Layout
+# Set to true to use realistic mock connectors (recommended for local dev)
+USE_MOCK_DATA=true
+4. Authenticate with Google Cloud
+gcloud auth application-default login
+gcloud config set project your-gcp-project-id
+gcloud auth application-default set-quota-project your-gcp-project-id
+5. Run the agent (CLI)
+make run MESSAGE='Check all pipeline connectors and report their current status.'
+You should see the agent reason through connector failures, take actions, and print an evaluator score.
+6. Run the full stack
+Terminal 1 — Backend:
+cd gemini-hackathon
+uv run uvicorn api.server:app --reload --port 8000
+Terminal 2 — Frontend:
+cd gemini-hackathon/frontend
+npm install
+npm run dev
+Open http://localhost:3000.
 
+Mock Data vs Live Fivetran
 
-| Path                       | Purpose                                                                                                                                |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `README.md`                | This quickstart                                                                                                                        |
-| `.env.example`             | `PHOENIX_`*, `GOOGLE_`*, optional `GEMINI_MODEL`                                                                                       |
-| `.gemini/settings.json`    | Phoenix MCP + Phoenix Docs MCP                                                                                                         |
-| `agent/main.py`            | One-shot CLI run with tracing                                                                                                          |
-| `agent/instrumentation.py` | `[phoenix.otel.register(..., auto_instrument=True)](https://arize.com/docs/phoenix/integrations/python/google-adk/google-adk-tracing)` |
-| `agent/shopping_demo/`     | ADK `root_agent`, prompt, tools, mini webshop                                                                                          |
-| `Makefile`                 | `make setup`, `make run`, `make run-adk`                                                                                               |
+Mock mode simulates five connectors: Salesforce (schema drift), Stripe (rate limit), Postgres (auth expiry), HubSpot (healthy), BigQuery (healthy). The mock is stateful — after trigger_resync is called, subsequent list_connectors calls return syncing state for that connector, exactly as the real API would.
 
+Project Structure
+conduit/
+├── gemini-hackathon/
+│   ├── agent/
+│   │   ├── conduit/
+│   │   │   ├── agent.py        # ADK root_agent definition
+│   │   │   ├── tools.py        # Fivetran API tool functions
+│   │   │   ├── evaluator.py    # LLM-as-a-Judge scoring
+│   │   │   ├── memory.py       # Lesson injection from past runs
+│   │   │   ├── mock.py         # Stateful mock Fivetran responses
+│   │   │   └── eval_scores.jsonl
+│   │   ├── instrumentation.py  # Phoenix tracing setup
+│   │   └── main.py             # CLI entry point
+│   ├── api/
+│   │   └── server.py           # FastAPI + SSE backend
+│   ├── frontend/
+│   │   └── app/
+│   │       └── page.tsx        # Full Next.js dashboard
+│   ├── .env.example
+│   ├── Makefile
+│   └── pyproject.toml
+└── README.md
 
-## Upstream credit
+Self-Improvement Loop
+Every agent run produces an evaluation stored in eval_scores.jsonl:
+{
+  "incident_id": "a3f9c2b1",
+  "diagnosis_accuracy": 5,
+  "action_appropriateness": 4,
+  "reasoning_clarity": 5,
+  "escalation_judgment": 5,
+  "overall_score": 5,
+  "key_finding": "Agent correctly identified rate limit and triggered resync.",
+  "improvement_suggestion": "Consider logging retry-after header value explicitly."
+}
+Before each new run, memory.py reads all past scores below 4, formats them as lessons, and prepends them to the agent's system prompt. The agent literally reads what it did wrong and adjusts.
 
-Agent structure and prompts are adapted from **Google ADK Samples** — [personalized-shopping](https://github.com/google/adk-samples/tree/main/python/agents/personalized-shopping) (Apache-2.0). Replace `shopping_demo/mini_webshop.py` with the full WebShop stack when you need the original fidelity.
+Arize Phoenix Integration
+All agent activity is automatically traced via openinference-instrumentation-google-adk:
+Every Gemini call (inputs, outputs, token counts, latency)
+Every Fivetran tool call (function name, arguments, return value)
+Every evaluator run (score breakdown, finding, suggestion)
+Traces are visible in your Phoenix Cloud dashboard under the conduit project in real time.
 
-## License
+Deployment
+Backend — Google Cloud Run
+gcloud run deploy conduit-api \
+  --source . \
+  --project your-gcp-project-id \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --min-instances 1 \
+  --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=your-gcp-project-id,GOOGLE_CLOUD_LOCATION=us-central1,USE_MOCK_DATA=true,PHOENIX_API_KEY=your_key,PHOENIX_PROJECT_NAME=conduit"
+--min-instances 1 keeps the container warm so judges get instant response when they open your project URL.
+Frontend — Vercel
+cd frontend
+npx vercel --prod
+Set NEXT_PUBLIC_API_URL to your Cloud Run service URL when prompted.
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Environment Variables Reference
+
+*Not required when USE_MOCK_DATA=true
+
+License
+Apache 2.0 — see LICENSE for details.
+
+Acknowledgements
+Built with Google ADK, Arize Phoenix, Fivetran, and Gemini for the Google Cloud Rapid Agent Hackathon 2026.
+
