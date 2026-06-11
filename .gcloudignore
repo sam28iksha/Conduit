@@ -1,0 +1,10 @@
+.gcloudignore
+.git
+.gitignore
+__pycache__
+*.pyc
+.venv
+venv
+frontend/
+frontend/node_modules/
+*.md

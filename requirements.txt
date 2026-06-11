@@ -1,0 +1,10 @@
+uvicorn
+fastapi
+python-dotenv
+google-cloud-aiplatform
+google-generativeai
+google-adk
+opentelemetry-sdk
+arize-phoenix-otel
+openinference-instrumentation-google-adk
+requests
