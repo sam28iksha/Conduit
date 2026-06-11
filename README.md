@@ -105,6 +105,9 @@ npm install
 npm run dev
 Open http://localhost:3000.
 
+Project URL:https://conduit-eta-puce.vercel.app/
+
+
 Mock Data vs Live Fivetran
 
 Mock mode simulates five connectors: Salesforce (schema drift), Stripe (rate limit), Postgres (auth expiry), HubSpot (healthy), BigQuery (healthy). The mock is stateful — after trigger_resync is called, subsequent list_connectors calls return syncing state for that connector, exactly as the real API would.
